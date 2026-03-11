@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vimeo 字幕批量上傳</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg-deep: #0a0a0f;
+  --bg-panel: #12121a;
+  --bg-card: #1a1a26;
+  --bg-hover: #222233;
+  --border: #2a2a3a;
+  --border-light: #3a3a4f;
+  --text-primary: #e8e6f0;
+  --text-secondary: #8a88a0;
+  --text-dim: #5a5870;
+  --accent: #d4a853;
+  --accent-glow: #d4a85344;
+  --success: #4ecb8d;
+  --success-bg: #4ecb8d18;
+  --error: #e05467;
+  --error-bg: #e0546718;
+  --warning: #e0a34e;
+  --warning-bg: #e0a34e18;
+  --vimeo-blue: #1ab7ea;
+  --radius: 8px;
+  --font-sans: 'Noto Sans TC', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+html { font-size: 15px; }
+
+body {
+  font-family: var(--font-sans);
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  min-height: 100vh;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* --- Grain overlay --- */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* --- Layout --- */
+.app {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 4rem;
+}
+
+/* --- Header --- */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 2.5rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.header-icon {
+  width: 40px;
+  height: 40px;
+  background: linear-gradient(135deg, var(--accent), #b8872e);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  flex-shrink: 0;
+  box-shadow: 0 4px 20px var(--accent-glow);
+}
+
+.header h1 {
+  font-size: 1.4rem;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.header h1 span {
+  color: var(--text-dim);
+  font-weight: 300;
+}
+
+/* --- Steps --- */
+.step {
+  margin-bottom: 1.5rem;
+  opacity: 0;
+  transform: translateY(12px);
+  animation: fadeUp 0.4s ease forwards;
+}
+.step:nth-child(2) { animation-delay: 0.08s; }
+.step:nth-child(3) { animation-delay: 0.16s; }
+.step:nth-child(4) { animation-delay: 0.24s; }
+
+@keyframes fadeUp {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.step-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.step-number {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  transition: all 0.3s;
+}
+
+.step.completed .step-number {
+  background: var(--success);
+  border-color: var(--success);
+  color: var(--bg-deep);
+}
+
+.step.active .step-number {
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+
+.step-title {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition: color 0.3s;
+}
+
+.step.active .step-title,
+.step.completed .step-title {
+  color: var(--text-primary);
+}
+
+/* --- Panels --- */
+.panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  transition: border-color 0.3s;
+}
+
+.panel:hover { border-color: var(--border-light); }
+
+/* --- Token Input --- */
+.token-row {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.input {
+  flex: 1;
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.65rem 0.9rem;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.input::placeholder { color: var(--text-dim); }
+.input:focus { border-color: var(--accent); }
+
+.btn {
+  padding: 0.65rem 1.2rem;
+  border: none;
+  border-radius: 6px;
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.btn:active { transform: scale(0.97); }
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--bg-deep);
+}
+.btn-primary:hover { background: #e0b45e; }
+.btn-primary:disabled {
+  background: var(--border);
+  color: var(--text-dim);
+  cursor: not-allowed;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+.btn-ghost:hover {
+  border-color: var(--border-light);
+  color: var(--text-primary);
+}
+
+.btn-success {
+  background: var(--success);
+  color: var(--bg-deep);
+}
+.btn-success:hover { background: #5dd89a; }
+
+.btn-sm {
+  padding: 0.45rem 0.8rem;
+  font-size: 0.8rem;
+}
+
+/* --- Connection Status --- */
+.conn-status {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+  padding: 0.6rem 0.85rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  animation: fadeUp 0.3s ease;
+}
+
+.conn-status.success {
+  background: var(--success-bg);
+  color: var(--success);
+  border: 1px solid #4ecb8d30;
+}
+
+.conn-status.error {
+  background: var(--error-bg);
+  color: var(--error);
+  border: 1px solid #e0546730;
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.conn-status.success .status-dot { background: var(--success); }
+.conn-status.error .status-dot { background: var(--error); }
+
+/* --- Dropzone --- */
+.dropzone {
+  border: 1.5px dashed var(--border-light);
+  border-radius: var(--radius);
+  padding: 2.5rem 1.5rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s;
+  position: relative;
+}
+
+.dropzone:hover,
+.dropzone.dragover {
+  border-color: var(--accent);
+  background: #d4a85308;
+}
+
+.dropzone-icon {
+  font-size: 2rem;
+  margin-bottom: 0.6rem;
+  opacity: 0.5;
+}
+
+.dropzone-text {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.dropzone-text strong {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.dropzone-hint {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  margin-top: 0.35rem;
+}
+
+.dropzone input[type="file"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* --- File List --- */
+.file-list {
+  margin-top: 0.85rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.file-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.78rem;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
+.file-tag .ext {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.file-tag .remove {
+  cursor: pointer;
+  color: var(--text-dim);
+  margin-left: 0.15rem;
+  transition: color 0.2s;
+}
+
+.file-tag .remove:hover { color: var(--error); }
+
+/* --- Match Results --- */
+.match-summary {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.match-stat {
+  flex: 1;
+  background: var(--bg-card);
+  border-radius: 6px;
+  padding: 0.85rem 1rem;
+  text-align: center;
+}
+
+.match-stat .count {
+  font-family: var(--font-mono);
+  font-size: 1.8rem;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.match-stat .label {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  margin-top: 0.3rem;
+}
+
+.match-stat.ok .count { color: var(--success); }
+.match-stat.fail .count { color: var(--error); }
+
+.match-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.match-table th {
+  text-align: left;
+  font-size: 0.72rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.match-table td {
+  padding: 0.6rem 0.75rem;
+  font-size: 0.85rem;
+  border-bottom: 1px solid #1e1e2e;
+  vertical-align: middle;
+}
+
+.match-table tr:last-child td { border-bottom: none; }
+
+.match-table tr:hover td { background: var(--bg-hover); }
+
+.match-table .filename {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.match-table .arrow {
+  color: var(--text-dim);
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+.match-table .video-name {
+  color: var(--text-primary);
+  font-weight: 400;
+}
+
+.match-table .video-link {
+  color: var(--vimeo-blue);
+  text-decoration: none;
+  font-size: 0.78rem;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.match-table .video-link:hover { opacity: 1; }
+
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.badge-ok {
+  background: var(--success-bg);
+  color: var(--success);
+  border: 1px solid #4ecb8d25;
+}
+
+.badge-fail {
+  background: var(--error-bg);
+  color: var(--error);
+  border: 1px solid #e0546725;
+}
+
+.badge-done {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.badge-uploading {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
+.badge-err {
+  background: var(--error-bg);
+  color: var(--error);
+}
+
+/* --- Upload Progress --- */
+.progress-bar-track {
+  width: 100%;
+  height: 4px;
+  background: var(--bg-deep);
+  border-radius: 2px;
+  margin: 1rem 0;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), #e0b45e);
+  border-radius: 2px;
+  transition: width 0.4s ease;
+  width: 0%;
+}
+
+.upload-log {
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.85rem;
+  max-height: 200px;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.8;
+  color: var(--text-secondary);
+}
+
+.upload-log .log-ok { color: var(--success); }
+.upload-log .log-err { color: var(--error); }
+
+/* --- Actions Bar --- */
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+/* --- Disabled overlay --- */
+.step.disabled .panel {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* --- Loading Spinner --- */
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid transparent;
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* --- Scrollbar --- */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-light); }
+
+/* --- Section divider --- */
+.section-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.5rem 0;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+
+.section-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- Header -->
+  <div class="header">
+    <div class="header-icon">CC</div>
+    <h1>Vimeo 字幕批量上傳 <span>/ SRT Uploader</span></h1>
+  </div>
+
+  <!-- Step 1: Token -->
+  <div class="step active" id="step1">
+    <div class="step-header">
+      <div class="step-number">1</div>
+      <div class="step-title">連線 Vimeo</div>
+    </div>
+    <div class="panel">
+      <div class="token-row">
+        <input type="password" class="input" id="tokenInput" placeholder="貼上 Vimeo Personal Access Token">
+        <button class="btn btn-primary" id="connectBtn" onclick="connect()">連線</button>
+      </div>
+      <div id="connStatus"></div>
+    </div>
+  </div>
+
+  <!-- Step 2: Upload SRT -->
+  <div class="step disabled" id="step2">
+    <div class="step-header">
+      <div class="step-number">2</div>
+      <div class="step-title">選取 SRT 檔案</div>
+    </div>
+    <div class="panel">
+      <div class="dropzone" id="dropzone">
+        <input type="file" id="fileInput" multiple accept=".srt">
+        <div class="dropzone-icon">SRT</div>
+        <div class="dropzone-text">拖曳 <strong>.srt</strong> 檔案至此，或點擊選取</div>
+        <div class="dropzone-hint">檔名須與 Vimeo 影片標題一致</div>
+      </div>
+      <div class="file-list" id="fileList"></div>
+      <div class="actions" id="matchActions" style="display:none">
+        <button class="btn btn-ghost btn-sm" onclick="clearFiles()">清除全部</button>
+        <button class="btn btn-primary btn-sm" id="matchBtn" onclick="matchFiles()">比對影片</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 3: Match Results -->
+  <div class="step disabled" id="step3">
+    <div class="step-header">
+      <div class="step-number">3</div>
+      <div class="step-title">匹配結果</div>
+    </div>
+    <div class="panel">
+      <div class="match-summary" id="matchSummary"></div>
+      <div id="matchResults"></div>
+      <div class="actions" id="uploadActions" style="display:none">
+        <button class="btn btn-ghost btn-sm" onclick="goBackToStep2()">重新選取</button>
+        <button class="btn btn-success btn-sm" id="uploadBtn" onclick="startUpload()">確認上傳字幕</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 4: Upload -->
+  <div class="step disabled" id="step4">
+    <div class="step-header">
+      <div class="step-number">4</div>
+      <div class="step-title">上傳進度</div>
+    </div>
+    <div class="panel">
+      <div class="progress-bar-track">
+        <div class="progress-bar-fill" id="progressBar"></div>
+      </div>
+      <div class="upload-log" id="uploadLog"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// --- State ---
+let selectedFiles = [];
+let matchedItems = [];
+let unmatchedItems = [];
+let isConnected = false;
+
+// --- Step Management ---
+function activateStep(n) {
+  document.querySelectorAll('.step').forEach((el, i) => {
+    const idx = i + 1;
+    el.classList.remove('active', 'completed', 'disabled');
+    if (idx < n) el.classList.add('completed');
+    else if (idx === n) el.classList.add('active');
+    else el.classList.add('disabled');
+  });
+}
+
+// --- Step 1: Connect ---
+async function connect() {
+  const token = document.getElementById('tokenInput').value.trim();
+  if (!token) return;
+
+  const btn = document.getElementById('connectBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> 連線中';
+
+  try {
+    const res = await fetch('/api/connect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) throw new Error(data.error);
+
+    document.getElementById('connStatus').innerHTML =
+      `<div class="conn-status success"><span class="status-dot"></span>已連線：${data.user.name}</div>`;
+    isConnected = true;
+    activateStep(2);
+    fetchVideos();
+  } catch (err) {
+    document.getElementById('connStatus').innerHTML =
+      `<div class="conn-status error"><span class="status-dot"></span>${err.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = isConnected ? '已連線' : '連線';
+  }
+}
+
+async function fetchVideos() {
+  const title = document.querySelector('#step2 .step-title');
+  title.textContent = '選取 SRT 檔案（正在載入影片列表...）';
+  try {
+    const res = await fetch('/api/videos');
+    const data = await res.json();
+    title.textContent = `選取 SRT 檔案（${data.videos.length} 部影片已載入）`;
+  } catch {
+    title.textContent = '選取 SRT 檔案（影片列表載入失敗）';
+  }
+}
+
+// --- Step 2: File Selection ---
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+
+dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+dropzone.addEventListener('dragleave', () => { dropzone.classList.remove('dragover'); });
+dropzone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropzone.classList.remove('dragover');
+  addFiles(e.dataTransfer.files);
+});
+
+fileInput.addEventListener('change', (e) => { addFiles(e.target.files); fileInput.value = ''; });
+
+// Allow Enter key on token input
+document.getElementById('tokenInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') connect();
+});
+
+function addFiles(fileListObj) {
+  for (const f of fileListObj) {
+    if (f.name.toLowerCase().endsWith('.srt') && !selectedFiles.some(s => s.name === f.name)) {
+      selectedFiles.push(f);
+    }
+  }
+  renderFileList();
+}
+
+function removeFile(name) {
+  selectedFiles = selectedFiles.filter(f => f.name !== name);
+  renderFileList();
+}
+
+function clearFiles() {
+  selectedFiles = [];
+  renderFileList();
+}
+
+function renderFileList() {
+  const list = document.getElementById('fileList');
+  const actions = document.getElementById('matchActions');
+
+  if (selectedFiles.length === 0) {
+    list.innerHTML = '';
+    actions.style.display = 'none';
+    return;
+  }
+
+  actions.style.display = 'flex';
+  list.innerHTML = selectedFiles.map(f =>
+    `<span class="file-tag">
+      <span class="ext">.srt</span>
+      ${f.name.replace('.srt', '')}
+      <span class="remove" onclick="removeFile('${f.name.replace(/'/g, "\\'")}')">&times;</span>
+    </span>`
+  ).join('');
+}
+
+// --- Step 3: Match ---
+async function matchFiles() {
+  const btn = document.getElementById('matchBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> 比對中';
+
+  const formData = new FormData();
+  selectedFiles.forEach(f => formData.append('srtFiles', f));
+
+  try {
+    const res = await fetch('/api/match', { method: 'POST', body: formData });
+    const data = await res.json();
+
+    if (!res.ok) throw new Error(data.error);
+
+    matchedItems = data.matched;
+    unmatchedItems = data.unmatched;
+    renderMatchResults();
+    activateStep(3);
+  } catch (err) {
+    alert('比對失敗: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '比對影片';
+  }
+}
+
+function renderMatchResults() {
+  // Summary
+  document.getElementById('matchSummary').innerHTML = `
+    <div class="match-stat ok">
+      <div class="count">${matchedItems.length}</div>
+      <div class="label">成功匹配</div>
+    </div>
+    <div class="match-stat fail">
+      <div class="count">${unmatchedItems.length}</div>
+      <div class="label">未匹配</div>
+    </div>
+  `;
+
+  let html = '';
+
+  if (matchedItems.length > 0) {
+    html += '<div class="section-divider">匹配成功</div>';
+    html += '<table class="match-table"><thead><tr><th>SRT 檔案</th><th></th><th>Vimeo 影片</th><th>狀態</th></tr></thead><tbody>';
+    matchedItems.forEach(m => {
+      html += `<tr>
+        <td class="filename">${m.filename}</td>
+        <td class="arrow">→</td>
+        <td>
+          <span class="video-name">${m.videoName}</span><br>
+          <a class="video-link" href="${m.videoLink}" target="_blank">ID: ${m.videoId}</a>
+        </td>
+        <td><span class="badge badge-ok">已匹配</span></td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+  }
+
+  if (unmatchedItems.length > 0) {
+    html += '<div class="section-divider" style="margin-top:1rem">未匹配</div>';
+    html += '<table class="match-table"><thead><tr><th>SRT 檔案</th><th></th><th>原因</th><th>狀態</th></tr></thead><tbody>';
+    unmatchedItems.forEach(u => {
+      html += `<tr>
+        <td class="filename">${u.filename}</td>
+        <td class="arrow">-</td>
+        <td style="color:var(--text-dim)">${u.reason}</td>
+        <td><span class="badge badge-fail">未匹配</span></td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+  }
+
+  document.getElementById('matchResults').innerHTML = html;
+  document.getElementById('uploadActions').style.display = matchedItems.length > 0 ? 'flex' : 'none';
+}
+
+function goBackToStep2() {
+  activateStep(2);
+}
+
+// --- Step 4: Upload ---
+async function startUpload() {
+  if (matchedItems.length === 0) return;
+
+  activateStep(4);
+  const log = document.getElementById('uploadLog');
+  const bar = document.getElementById('progressBar');
+  log.innerHTML = '';
+  bar.style.width = '0%';
+
+  const items = matchedItems.map(m => ({
+    videoId: m.videoId,
+    filename: m.filename,
+    srtContent: m.srtContent,
+  }));
+
+  appendLog(log, `開始上傳 ${items.length} 個字幕檔...`, '');
+
+  try {
+    const res = await fetch('/api/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items }),
+    });
+    const data = await res.json();
+
+    let ok = 0, fail = 0;
+    data.results.forEach((r, i) => {
+      const pct = Math.round(((i + 1) / data.results.length) * 100);
+      bar.style.width = pct + '%';
+
+      if (r.status === 'success') {
+        ok++;
+        appendLog(log, `✓ ${r.filename}`, 'log-ok');
+      } else {
+        fail++;
+        appendLog(log, `✗ ${r.filename} — ${r.error}`, 'log-err');
+      }
+    });
+
+    bar.style.width = '100%';
+    appendLog(log, '', '');
+    appendLog(log, `完成！成功 ${ok}，失敗 ${fail}`, ok > 0 ? 'log-ok' : 'log-err');
+
+  } catch (err) {
+    appendLog(log, `上傳失敗: ${err.message}`, 'log-err');
+  }
+}
+
+function appendLog(el, text, cls) {
+  const line = document.createElement('div');
+  if (cls) line.className = cls;
+  line.textContent = text;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+</script>
+
+</body>
+</html>
