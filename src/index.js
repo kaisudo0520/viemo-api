@@ -1,4 +1,3 @@
-require("dotenv").config();
 const path = require("path");
 const fs = require("fs");
 const { createClient, fetchAllVideos, addTextTrack, uploadSrtContent } = require("./vimeo-client");
@@ -13,9 +12,9 @@ function sleep(ms) {
 }
 
 async function main() {
-  const token = process.env.VIMEO_ACCESS_TOKEN;
-  if (!token || token === "your_access_token_here") {
-    console.error("請先在 .env 設定 VIMEO_ACCESS_TOKEN");
+  const token = process.argv[2];
+  if (!token) {
+    console.error("用法: node src/index.js <ACCESS_TOKEN> [--dry-run]");
     process.exit(1);
   }
 

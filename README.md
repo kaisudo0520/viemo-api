@@ -6,7 +6,8 @@
 
 - 透過 Vimeo API 取得帳號下所有影片
 - SRT 檔名自動比對影片標題（忽略大小寫、空格/底線/連字號差異）
-- 預覽匹配結果（dry-run），確認後再上傳
+- 支援選取單一資料夾或多個檔案
+- 預覽匹配結果，確認後再上傳（即時 SSE 進度回報）
 - 字幕語言預設繁體中文（zh-TW）
 
 ## 前置需求
@@ -24,22 +25,8 @@
 
 ```bash
 git clone https://github.com/kaisudo0520/viemo-api.git
-cd vimeo-api
+cd viemo-api
 npm install
-```
-
-## 設定
-
-複製範本並填入 Access Token：
-
-```bash
-cp .env.sample .env
-```
-
-編輯 `.env`，替換 token：
-
-```
-VIMEO_ACCESS_TOKEN=your_access_token_here
 ```
 
 ## 使用方式
@@ -50,12 +37,11 @@ VIMEO_ACCESS_TOKEN=your_access_token_here
 npm run dev
 ```
 
-開啟 http://localhost:3000 ，依照畫面四步驟操作：
+開啟 http://localhost:3000 ，依照畫面三步驟操作：
 
 1. **連線** — 貼上 Access Token，驗證帳號
-2. **選取檔案** — 拖曳或點擊上傳 `.srt` 檔
-3. **預覽匹配** — 確認 SRT 與影片的對應關係
-4. **上傳** — 確認無誤後批量上傳字幕
+2. **選取檔案** — 拖曳檔案、點擊選取、或選取整個資料夾
+3. **匹配與上傳** — 預覽匹配結果，確認後批量上傳字幕
 
 ### CLI 模式
 
@@ -63,10 +49,10 @@ npm run dev
 
 ```bash
 # 預覽匹配結果（不上傳）
-npm run dry-run
+node src/index.js <ACCESS_TOKEN> --dry-run
 
 # 正式上傳
-npm run upload
+node src/index.js <ACCESS_TOKEN>
 ```
 
 ## 檔名匹配規則
@@ -85,8 +71,7 @@ SRT 檔名（不含副檔名）需與 Vimeo 影片標題一致。比對時：
 ## 專案結構
 
 ```
-vimeo-api/
-├── .env                 # Access Token
+viemo-api/
 ├── public/
 │   └── index.html       # 網頁介面
 ├── srt/                 # CLI 模式的 SRT 目錄
@@ -104,7 +89,8 @@ vimeo-api/
 | POST | `/api/connect` | 驗證 Token 並連線 |
 | GET | `/api/videos` | 取得影片列表 |
 | POST | `/api/match` | 上傳 SRT 檔並比對影片 |
-| POST | `/api/upload` | 批量上傳字幕至 Vimeo |
+| POST | `/api/upload` | 提交上傳項目 |
+| GET | `/api/upload/stream` | SSE 即時上傳進度串流 |
 
 ## 授權
 

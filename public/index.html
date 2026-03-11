@@ -105,7 +105,6 @@ body::after {
 }
 .step:nth-child(2) { animation-delay: 0.08s; }
 .step:nth-child(3) { animation-delay: 0.16s; }
-.step:nth-child(4) { animation-delay: 0.24s; }
 
 @keyframes fadeUp {
   to { opacity: 1; transform: translateY(0); }
@@ -318,6 +317,40 @@ body::after {
   opacity: 0;
   cursor: pointer;
 }
+
+/* --- Folder picker --- */
+.folder-pick {
+  position: relative;
+  border: 1.5px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 0.85rem 1.5rem;
+  cursor: pointer;
+  transition: all 0.3s;
+  margin-top: 0.5rem;
+}
+
+.folder-pick:hover {
+  border-color: var(--accent);
+  background: #d4a85308;
+}
+
+.folder-pick input[type="file"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.folder-pick-inner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+}
+
+.folder-icon { font-size: 1.1rem; }
 
 /* --- File List --- */
 .file-list {
@@ -602,6 +635,16 @@ body::after {
         <div class="dropzone-text">拖曳 <strong>.srt</strong> 檔案至此，或點擊選取</div>
         <div class="dropzone-hint">檔名須與 Vimeo 影片標題一致</div>
       </div>
+      <div style="text-align:center; margin-top:0.5rem">
+        <span style="color:var(--text-dim); font-size:0.78rem">或</span>
+      </div>
+      <div class="folder-pick" id="folderPick">
+        <input type="file" id="folderInput" webkitdirectory directory>
+        <div class="folder-pick-inner">
+          <span class="folder-icon">&#128193;</span>
+          <span>選取整個資料夾</span>
+        </div>
+      </div>
       <div class="file-list" id="fileList"></div>
       <div class="actions" id="matchActions" style="display:none">
         <button class="btn btn-ghost btn-sm" onclick="clearFiles()">清除全部</button>
@@ -610,7 +653,7 @@ body::after {
     </div>
   </div>
 
-  <!-- Step 3: Match Results -->
+  <!-- Step 3: Match & Upload -->
   <div class="step disabled" id="step3">
     <div class="step-header">
       <div class="step-number">3</div>
@@ -618,25 +661,15 @@ body::after {
     </div>
     <div class="panel">
       <div class="match-summary" id="matchSummary"></div>
+      <div class="progress-bar-track" id="uploadProgressTrack" style="display:none">
+        <div class="progress-bar-fill" id="progressBar"></div>
+      </div>
       <div id="matchResults"></div>
+      <div class="upload-log" id="uploadLog" style="display:none"></div>
       <div class="actions" id="uploadActions" style="display:none">
         <button class="btn btn-ghost btn-sm" onclick="goBackToStep2()">重新選取</button>
         <button class="btn btn-success btn-sm" id="uploadBtn" onclick="startUpload()">確認上傳字幕</button>
       </div>
-    </div>
-  </div>
-
-  <!-- Step 4: Upload -->
-  <div class="step disabled" id="step4">
-    <div class="step-header">
-      <div class="step-number">4</div>
-      <div class="step-title">上傳進度</div>
-    </div>
-    <div class="panel">
-      <div class="progress-bar-track">
-        <div class="progress-bar-fill" id="progressBar"></div>
-      </div>
-      <div class="upload-log" id="uploadLog"></div>
     </div>
   </div>
 </div>
@@ -717,6 +750,9 @@ dropzone.addEventListener('drop', (e) => {
 });
 
 fileInput.addEventListener('change', (e) => { addFiles(e.target.files); fileInput.value = ''; });
+
+const folderInput = document.getElementById('folderInput');
+folderInput.addEventListener('change', (e) => { addFiles(e.target.files); folderInput.value = ''; });
 
 // Allow Enter key on token input
 document.getElementById('tokenInput').addEventListener('keydown', (e) => {
@@ -802,20 +838,26 @@ function renderMatchResults() {
     </div>
   `;
 
+  // Reset upload UI
+  document.getElementById('uploadProgressTrack').style.display = 'none';
+  document.getElementById('progressBar').style.width = '0%';
+  document.getElementById('uploadLog').style.display = 'none';
+  document.getElementById('uploadLog').innerHTML = '';
+
   let html = '';
 
   if (matchedItems.length > 0) {
     html += '<div class="section-divider">匹配成功</div>';
     html += '<table class="match-table"><thead><tr><th>SRT 檔案</th><th></th><th>Vimeo 影片</th><th>狀態</th></tr></thead><tbody>';
-    matchedItems.forEach(m => {
-      html += `<tr>
+    matchedItems.forEach((m, i) => {
+      html += `<tr data-upload-index="${i}">
         <td class="filename">${m.filename}</td>
-        <td class="arrow">→</td>
+        <td class="arrow">\u2192</td>
         <td>
           <span class="video-name">${m.videoName}</span><br>
           <a class="video-link" href="${m.videoLink}" target="_blank">ID: ${m.videoId}</a>
         </td>
-        <td><span class="badge badge-ok">已匹配</span></td>
+        <td class="status-cell"><span class="badge badge-ok">已匹配</span></td>
       </tr>`;
     });
     html += '</tbody></table>';
@@ -843,13 +885,37 @@ function goBackToStep2() {
   activateStep(2);
 }
 
-// --- Step 4: Upload ---
+// --- Upload via SSE ---
+function updateRowStatus(index, status, errorMsg) {
+  const row = document.querySelector(`tr[data-upload-index="${index}"]`);
+  if (!row) return;
+  const cell = row.querySelector('.status-cell');
+  if (status === 'uploading') {
+    cell.innerHTML = '<span class="badge badge-uploading"><span class="spinner" style="width:10px;height:10px;border-width:1.5px;margin-right:4px;vertical-align:middle"></span>上傳中</span>';
+    row.style.background = 'var(--warning-bg)';
+  } else if (status === 'success') {
+    cell.innerHTML = '<span class="badge badge-done">已上傳</span>';
+    row.style.background = 'var(--success-bg)';
+  } else if (status === 'error') {
+    cell.innerHTML = `<span class="badge badge-err" title="${errorMsg || ''}">失敗</span>`;
+    row.style.background = 'var(--error-bg)';
+  }
+}
+
 async function startUpload() {
   if (matchedItems.length === 0) return;
 
-  activateStep(4);
-  const log = document.getElementById('uploadLog');
+  const uploadBtn = document.getElementById('uploadBtn');
+  const backBtn = uploadBtn.previousElementSibling;
+  uploadBtn.disabled = true;
+  uploadBtn.innerHTML = '<span class="spinner"></span> 上傳中';
+  backBtn.style.display = 'none';
+
   const bar = document.getElementById('progressBar');
+  const progressTrack = document.getElementById('uploadProgressTrack');
+  const log = document.getElementById('uploadLog');
+  progressTrack.style.display = 'block';
+  log.style.display = 'block';
   log.innerHTML = '';
   bar.style.width = '0%';
 
@@ -862,34 +928,59 @@ async function startUpload() {
   appendLog(log, `開始上傳 ${items.length} 個字幕檔...`, '');
 
   try {
-    const res = await fetch('/api/upload', {
+    // Step 1: POST items to server
+    const postRes = await fetch('/api/upload', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ items }),
     });
-    const data = await res.json();
+    if (!postRes.ok) {
+      const err = await postRes.json();
+      throw new Error(err.error);
+    }
 
-    let ok = 0, fail = 0;
-    data.results.forEach((r, i) => {
-      const pct = Math.round(((i + 1) / data.results.length) * 100);
-      bar.style.width = pct + '%';
+    // Step 2: Open SSE stream
+    await new Promise((resolve, reject) => {
+      const es = new EventSource('/api/upload/stream');
 
-      if (r.status === 'success') {
-        ok++;
-        appendLog(log, `✓ ${r.filename}`, 'log-ok');
-      } else {
-        fail++;
-        appendLog(log, `✗ ${r.filename} — ${r.error}`, 'log-err');
-      }
+      es.addEventListener('progress', (e) => {
+        const d = JSON.parse(e.data);
+        const pct = Math.round((d.current / d.total) * 100);
+        bar.style.width = pct + '%';
+        updateRowStatus(d.index, d.status, d.error);
+
+        if (d.status === 'success') {
+          appendLog(log, `\u2713 ${d.filename}`, 'log-ok');
+        } else if (d.status === 'error') {
+          appendLog(log, `\u2717 ${d.filename} \u2014 ${d.error}`, 'log-err');
+        }
+      });
+
+      es.addEventListener('done', (e) => {
+        const d = JSON.parse(e.data);
+        es.close();
+        bar.style.width = '100%';
+        appendLog(log, '', '');
+        appendLog(log, `完成！成功 ${d.ok}，失敗 ${d.fail}`, d.ok > 0 ? 'log-ok' : 'log-err');
+        resolve();
+      });
+
+      es.onerror = () => {
+        es.close();
+        reject(new Error('SSE 連線中斷'));
+      };
     });
-
-    bar.style.width = '100%';
-    appendLog(log, '', '');
-    appendLog(log, `完成！成功 ${ok}，失敗 ${fail}`, ok > 0 ? 'log-ok' : 'log-err');
 
   } catch (err) {
     appendLog(log, `上傳失敗: ${err.message}`, 'log-err');
   }
+
+  uploadBtn.disabled = false;
+  uploadBtn.innerHTML = '上傳完成';
+  uploadBtn.onclick = null;
+  backBtn.style.display = '';
+  backBtn.textContent = '返回重新操作';
+  backBtn.onclick = () => { goBackToStep2(); };
 }
 
 function appendLog(el, text, cls) {

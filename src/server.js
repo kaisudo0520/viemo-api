@@ -1,4 +1,3 @@
-require("dotenv").config();
 const express = require("express");
 const multer = require("multer");
 const cors = require("cors");
@@ -9,7 +8,7 @@ const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "50mb" }));
 app.use(express.static(path.join(__dirname, "../public")));
 
 // --- State ---
@@ -29,7 +28,6 @@ app.post("/api/connect", async (req, res) => {
 
   try {
     const client = createClient(token);
-    // Test connection by fetching user info
     const user = await new Promise((resolve, reject) => {
       client.request({ method: "GET", path: "/me", query: { fields: "name,uri" } }, (err, body, status) => {
         if (err || status >= 400) return reject(new Error("Token 無效或連線失敗"));
@@ -68,20 +66,25 @@ app.post("/api/match", upload.array("srtFiles"), (req, res) => {
   const unmatched = [];
 
   for (const file of files) {
-    const ext = path.extname(file.originalname).toLowerCase();
+    // Strip folder prefix from webkitRelativePath-style names
+    const basename = file.originalname.includes("/")
+      ? file.originalname.split("/").pop()
+      : file.originalname;
+
+    const ext = path.extname(basename).toLowerCase();
     if (ext !== ".srt") {
-      unmatched.push({ filename: file.originalname, reason: "非 SRT 檔案" });
+      unmatched.push({ filename: basename, reason: "非 SRT 檔案" });
       continue;
     }
 
-    const title = path.basename(file.originalname, ext);
+    const title = path.basename(basename, ext);
     const titleNorm = normalize(title);
     const found = cachedVideos.find((v) => normalize(v.name) === titleNorm);
 
     if (found) {
       const videoId = found.uri.replace("/videos/", "");
       matched.push({
-        filename: file.originalname,
+        filename: basename,
         titleFromFile: title,
         videoId,
         videoName: found.name,
@@ -89,36 +92,64 @@ app.post("/api/match", upload.array("srtFiles"), (req, res) => {
         srtContent: file.buffer.toString("utf-8"),
       });
     } else {
-      unmatched.push({ filename: file.originalname, titleFromFile: title, reason: "找不到匹配影片" });
+      unmatched.push({ filename: basename, titleFromFile: title, reason: "找不到匹配影片" });
     }
   }
 
   res.json({ matched, unmatched });
 });
 
-// Upload text tracks
-app.post("/api/upload", async (req, res) => {
+// Store pending upload items
+let pendingUploadItems = null;
+
+app.post("/api/upload", (req, res) => {
+  const { items } = req.body;
+  if (!items || items.length === 0) return res.status(400).json({ error: "無上傳項目" });
+  pendingUploadItems = items;
+  res.json({ ok: true, count: items.length });
+});
+
+// SSE stream for upload progress
+app.get("/api/upload/stream", async (req, res) => {
+  const items = pendingUploadItems;
+  if (!items) return res.status(400).json({ error: "無待上傳項目" });
+  pendingUploadItems = null;
+
   if (!activeClient) return res.status(401).json({ error: "尚未連線" });
 
-  const { items } = req.body; // [{ videoId, srtContent, filename }]
-  if (!items || items.length === 0) return res.status(400).json({ error: "無上傳項目" });
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+  });
 
-  const results = [];
+  const send = (event, data) => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
 
-  for (const item of items) {
+  const total = items.length;
+  let ok = 0;
+  let fail = 0;
+
+  for (let i = 0; i < total; i++) {
+    const item = items[i];
+    send("progress", { index: i, filename: item.filename, status: "uploading", current: i + 1, total });
+
     try {
       const track = await addTextTrack(activeClient, item.videoId);
       await uploadSrtContent(activeClient, track.link, item.srtContent);
-      results.push({ filename: item.filename, videoId: item.videoId, status: "success" });
+      ok++;
+      send("progress", { index: i, filename: item.filename, status: "success", current: i + 1, total });
     } catch (err) {
-      results.push({ filename: item.filename, videoId: item.videoId, status: "error", error: err.message });
+      fail++;
+      send("progress", { index: i, filename: item.filename, status: "error", error: err.message, current: i + 1, total });
     }
 
-    // Rate limit delay
     await new Promise((r) => setTimeout(r, 800));
   }
 
-  res.json({ results });
+  send("done", { total, ok, fail });
+  res.end();
 });
 
 const PORT = process.env.PORT || 3000;

@@ -3,9 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "dev": "node src/server.js",
-    "dry-run": "node src/index.js --dry-run",
-    "upload": "node src/index.js"
+    "dev": "node src/server.js"
   },
   "keywords": [],
   "author": "",
@@ -14,7 +12,6 @@
   "dependencies": {
     "@vimeo/vimeo": "^3.0.3",
     "cors": "^2.8.6",
-    "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "multer": "^2.1.1"
   }
