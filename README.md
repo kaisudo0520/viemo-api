@@ -29,9 +29,15 @@ cd viemo-api
 npm install
 ```
 
+或直接雙擊 `install.bat` 一鍵安裝。
+
 ## 使用方式
 
-### 網頁介面
+### 網頁介面（推薦）
+
+雙擊 `start.bat` 一鍵啟動，自動開啟瀏覽器。
+
+或手動啟動：
 
 ```bash
 npm run dev
@@ -72,6 +78,8 @@ SRT 檔名（不含副檔名）需與 Vimeo 影片標題一致。比對時：
 
 ```
 viemo-api/
+├── install.bat          # 一鍵安裝
+├── start.bat            # 一鍵啟動
 ├── public/
 │   └── index.html       # 網頁介面
 ├── srt/                 # CLI 模式的 SRT 目錄
