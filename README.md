@@ -1,0 +1,105 @@
+# Vimeo 字幕批量上傳工具
+
+批量上傳 SRT 字幕檔至 Vimeo，自動依檔名匹配對應影片。提供網頁介面與 CLI 兩種操作方式。
+
+## 功能
+
+- 透過 Vimeo API 取得帳號下所有影片
+- SRT 檔名自動比對影片標題（忽略大小寫、空格/底線/連字號差異）
+- 支援選取單一資料夾或多個檔案
+- 預覽匹配結果，確認後再上傳（即時 SSE 進度回報）
+- 字幕語言預設繁體中文（zh-TW）
+
+## 前置需求
+
+- [Node.js](https://nodejs.org/) >= 18
+- Vimeo Personal Access Token（需含 `upload`、`edit` scope）
+
+### 取得 Access Token
+
+1. 前往 [Vimeo Developer](https://developer.vimeo.com/apps) 建立應用程式
+2. 在應用程式頁面產生 Personal Access Token
+3. 勾選所需權限：`private`、`edit`、`upload`
+
+## 安裝
+
+```bash
+git clone https://github.com/kaisudo0520/viemo-api.git
+cd viemo-api
+npm install
+```
+
+或直接雙擊 `install.bat` 一鍵安裝。
+
+## 使用方式
+
+### 網頁介面（推薦）
+
+雙擊 `start.bat` 一鍵啟動，自動開啟瀏覽器。
+
+或手動啟動：
+
+```bash
+npm run dev
+```
+
+開啟 http://localhost:3000 ，依照畫面三步驟操作：
+
+1. **連線** — 貼上 Access Token，驗證帳號
+2. **選取檔案** — 拖曳檔案、點擊選取、或選取整個資料夾
+3. **匹配與上傳** — 預覽匹配結果，確認後批量上傳字幕
+
+### CLI 模式
+
+將 `.srt` 檔案放入 `srt/` 目錄，檔名須與影片標題一致。
+
+```bash
+# 預覽匹配結果（不上傳）
+node src/index.js <ACCESS_TOKEN> --dry-run
+
+# 正式上傳
+node src/index.js <ACCESS_TOKEN>
+```
+
+## 檔名匹配規則
+
+SRT 檔名（不含副檔名）需與 Vimeo 影片標題一致。比對時：
+
+- 忽略大小寫
+- 空格、底線 `_`、連字號 `-` 視為相同
+
+| SRT 檔名 | 可匹配的影片標題 |
+|----------|----------------|
+| `我的旅遊紀錄.srt` | 我的旅遊紀錄 |
+| `product-demo.srt` | Product Demo |
+| `my_video.srt` | my video |
+
+## 專案結構
+
+```
+viemo-api/
+├── install.bat          # 一鍵安裝
+├── start.bat            # 一鍵啟動
+├── public/
+│   └── index.html       # 網頁介面
+├── srt/                 # CLI 模式的 SRT 目錄
+└── src/
+    ├── server.js        # Express API 伺服器
+    ├── vimeo-client.js  # Vimeo API 封裝
+    ├── matcher.js       # 匹配邏輯
+    └── index.js         # CLI 入口
+```
+
+## API 端點（內部）
+
+| 方法 | 路徑 | 說明 |
+|------|------|------|
+| POST | `/api/connect` | 驗證 Token 並連線 |
+| GET | `/api/videos` | 取得影片列表 |
+| POST | `/api/match` | 上傳 SRT 檔並比對影片 |
+| POST | `/api/upload` | 提交上傳項目 |
+| GET | `/api/upload/stream` | SSE 即時上傳進度串流 |
+
+## 授權
+
+ISC
