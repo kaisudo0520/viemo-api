@@ -41,12 +41,38 @@ async function fetchAllVideos(client) {
   return videos;
 }
 
-async function addTextTrack(client, videoId, { language = "zh-TW", name = "繁體中文" } = {}) {
-  return apiRequest(client, "POST", `/videos/${videoId}/texttracks`, {
+async function fetchFolders(client) {
+  const folders = [];
+  let page = 1;
+  const perPage = 100;
+
+  while (true) {
+    const res = await apiRequest(client, "GET", "/me/folders", {
+      per_page: perPage,
+      page,
+      fields: "uri,name,link",
+    });
+
+    if (!res.data || res.data.length === 0) break;
+    folders.push(...res.data);
+
+    if (!res.paging || !res.paging.next) break;
+    page++;
+  }
+
+  return folders;
+}
+
+async function addTextTrack(client, videoId, { language = "zh-TW", name = "繁體中文", folderUri = null } = {}) {
+  const params = {
     type: "subtitles",
     language,
     name,
-  });
+  };
+  if (folderUri) {
+    params.folder_uri = folderUri;
+  }
+  return apiRequest(client, "POST", `/videos/${videoId}/texttracks`, params);
 }
 
 async function uploadSrtContent(client, uploadLink, srtContent) {
@@ -67,4 +93,4 @@ async function uploadSrtContent(client, uploadLink, srtContent) {
   });
 }
 
-module.exports = { createClient, fetchAllVideos, addTextTrack, uploadSrtContent };
+module.exports = { createClient, fetchAllVideos, addTextTrack, uploadSrtContent, fetchFolders, addVideoToFolder };

@@ -2,7 +2,7 @@ const express = require("express");
 const multer = require("multer");
 const cors = require("cors");
 const path = require("path");
-const { createClient, fetchAllVideos, addTextTrack, uploadSrtContent } = require("./vimeo-client");
+const { createClient, fetchAllVideos, addTextTrack, uploadSrtContent, fetchFolders } = require("./vimeo-client");
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -13,6 +13,7 @@ app.use(express.static(path.join(__dirname, "../public")));
 
 // --- State ---
 let cachedVideos = null;
+let cachedFolders = null;
 let activeClient = null;
 
 function normalize(str) {
@@ -50,6 +51,19 @@ app.get("/api/videos", async (req, res) => {
     const videos = await fetchAllVideos(activeClient);
     cachedVideos = videos;
     res.json({ videos });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Fetch folders
+app.get("/api/folders", async (req, res) => {
+  if (!activeClient) return res.status(401).json({ error: "尚未連線" });
+
+  try {
+    const folders = await fetchFolders(activeClient);
+    cachedFolders = folders;
+    res.json({ folders });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
