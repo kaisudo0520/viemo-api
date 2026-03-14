@@ -66,10 +66,13 @@ app.post("/api/match", upload.array("srtFiles"), (req, res) => {
   const unmatched = [];
 
   for (const file of files) {
+    // multer stores originalname in latin1; decode to utf-8 for CJK filenames
+    const decodedName = Buffer.from(file.originalname, "latin1").toString("utf-8");
+
     // Strip folder prefix from webkitRelativePath-style names
-    const basename = file.originalname.includes("/")
-      ? file.originalname.split("/").pop()
-      : file.originalname;
+    const basename = decodedName.includes("/")
+      ? decodedName.split("/").pop()
+      : decodedName;
 
     const ext = path.extname(basename).toLowerCase();
     if (ext !== ".srt") {
